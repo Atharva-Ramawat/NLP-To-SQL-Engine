@@ -29,222 +29,307 @@ SCHEMA_MAPPING = {
 
 NUMERIC_COLUMNS = {"salary", "experience"} 
 
-def generate_sql(parsed_data: Dict[str, Any]) -> Tuple[str, List[Any]]:
-    logger.info("Generating fully optimized safe SQL structure.")
-    
-    if not parsed_data:
-        raise ValueError("Cannot parse an empty sentence context.")
-
+def build_query_plan(parsed_data: Dict[str, Any]) -> Dict[str, Any]:
     keywords = parsed_data.get('keywords', [])
     numerics = parsed_data.get('numerics', [])
     aggregations = parsed_data.get('aggregations', [])
-    group_by = parsed_data.get('group_by', [])
-    order_by = parsed_data.get('order_by', [])
-    limit = parsed_data.get('limit', None)
+    group_items = parsed_data.get('group_by', [])
+    order_items = parsed_data.get('order_by', [])
+    limit_val = parsed_data.get('limit', None)
+
+    ir = {
+        "filters": {"type": "OR", "groups": []},
+        "numeric_filters": [],
+        "group_by": [],
+        "aggregations": [],
+        "having": [],
+        "order_by": [],
+        "limit": limit_val
+    }
+
+    # 1. Group By (Dimensions Only)
+    for col in group_items:
+        c = SCHEMA_MAPPING.get(col)
+        # Dynamically ensure we ONLY extract bare schema labels and not filter values (e.g., 'city' = safe, 'pune' = reject)
+        if c and (col == c or col == c + "s" or col == "cities"):
+            if c not in NUMERIC_COLUMNS and c != "*" and c not in ir["group_by"]:
+                ir["group_by"].append(c)
+
+    # 2. Aggregations (Measures Only)
+    agg_target_col = None
     
-    conditions = []
-    having_conditions = []
-    params = []
-    having_params = []
-    
-    # 1. Deduplicate base keyword tracking
-    unique_kws = []
-    for kw in keywords:
-        if kw not in unique_kws:
-            unique_kws.append(kw)
-    keywords = unique_kws
-
-    # 2. Map Categorical / String Filters with Negation Isolation and Cross-Column ORs
-    col_clusters = {}
-    for kw in keywords:
-        word = kw['word']
-        negated = kw['negated']
-        logic = kw.get('logic', 'AND')
-        
-        if word in SCHEMA_MAPPING:
-            column = SCHEMA_MAPPING[word]
-            if column not in NUMERIC_COLUMNS and column != "*": 
-                if column not in col_clusters:
-                    col_clusters[column] = {"include": [], "exclude": [], "has_or": False}
-                
-                if logic == "OR":
-                    col_clusters[column]["has_or"] = True
-                    
-                if negated:
-                    if word.lower() not in col_clusters[column]["exclude"]:
-                        col_clusters[column]["exclude"].append(word.lower())
-                else:
-                    if word.lower() not in col_clusters[column]["include"]:
-                        col_clusters[column]["include"].append(word.lower())
-
-    sql_conds_formatted = []
-    for column, rules in col_clusters.items():
-        includes = rules["include"]
-        excludes = rules["exclude"]
-        cluster_logic = "OR" if rules["has_or"] and sql_conds_formatted else "AND"
-        
-        pieces = []
-        if includes:
-            if len(includes) == 1:
-                pieces.append(f"lower({column}) = ?")
-                params.append(includes[0])
-            else:
-                placeholders = ", ".join(["?"] * len(includes))
-                pieces.append(f"lower({column}) IN ({placeholders})")
-                params.extend(includes)
-                
-        if excludes:
-            if len(excludes) == 1:
-                pieces.append(f"lower({column}) != ?")
-                params.append(excludes[0])
-            else:
-                placeholders = ", ".join(["?"] * len(excludes))
-                pieces.append(f"lower({column}) NOT IN ({placeholders})")
-                params.extend(excludes)
-                
-        if pieces:
-            sql_conds_formatted.append({"expr": " AND ".join(pieces), "link": cluster_logic})
-
-    for sc in sql_conds_formatted:
-        if not conditions:
-            conditions.append(sc["expr"])
-        else:
-            # Inject native OR logic bindings cross column
-            conditions.append(f"{sc['link']} {sc['expr']}")
-
-    # 3. Dynamic Aggregation Target Switching ("total salary" = SUM, "total employees" = COUNT)
-    valid_group_cols = []
-    for term in group_by:
-        if term in SCHEMA_MAPPING:
-            col = SCHEMA_MAPPING[term]
-            if col not in valid_group_cols:
-                valid_group_cols.append(col)
-
-    select_items = []
+    unique_aggs = []
     for agg in aggregations:
-        func = agg['func']
-        target = agg['target']
+        target = agg["target"]
+        func = agg["func"]
         
-        mapped_col = SCHEMA_MAPPING.get(target) if target != "*" else "*"
-        if not mapped_col and target != "*":
+        c = SCHEMA_MAPPING.get(target) if target != "*" else "*"
+        if not c and target != "*":
             continue
             
         if func == "TOTAL_OR_COUNT":
-            func = "SUM" if mapped_col in NUMERIC_COLUMNS else "COUNT"
+            func = "SUM" if c in NUMERIC_COLUMNS else "COUNT"
             
-        item_str = f"{func}(*)" if mapped_col == "*" else f"{func}({mapped_col})"
-        
-        if item_str not in select_items:
-            select_items.append(item_str)
+        # Enforce measure rules (SUM, AVG, MIN, MAX only on numerics)
+        if func in ("SUM", "AVG", "MIN", "MAX") and c not in NUMERIC_COLUMNS:
+            continue
             
-    for col in valid_group_cols:
-        if col not in select_items:
-            select_items.insert(0, col)
-            
-    select_clause = ", ".join(select_items) if select_items else "*"
+        item = {"func": func, "field": c}
+        if item not in unique_aggs:
+            unique_aggs.append(item)
+            if c != "*":
+                agg_target_col = c
 
-    # 4. Smart Target Binding for Numbers
-    target_num_col = None
-    for kw in reversed(keywords): # Look internally for numeric targets closest to numbers mentally
-        w = kw['word']
-        if w in SCHEMA_MAPPING and SCHEMA_MAPPING[w] in NUMERIC_COLUMNS:
-            target_num_col = SCHEMA_MAPPING[w]
-            break
-            
-    if not target_num_col and numerics:
-        pass # Disabling dangerous 'salary' fallback per schema rules
+    ir["aggregations"] = unique_aggs
 
-    is_agg_target = False
-    agg_func = None
-    if target_num_col:
-        for agg in aggregations:
-            if agg['target'] in SCHEMA_MAPPING and SCHEMA_MAPPING[agg['target']] == target_num_col:
-                is_agg_target = True
-                f = agg['func']
-                if f == "TOTAL_OR_COUNT": f = "SUM"
-                agg_func = f
-                break
-
-    for num_cond in numerics:
-        op = num_cond.get('operator')
-        negated = num_cond.get('negated', False)
-        val = num_cond.get('value')
-        explicit_col = num_cond.get('target_col')
-        
-        active_target = explicit_col if explicit_col else target_num_col
-        
-        if not active_target:
-            continue # Safely skip unassigned numerics without falling back
-        
-        left = f"{agg_func}({active_target})" if (valid_group_cols and is_agg_target and active_target == target_num_col) else active_target
-        c_list = having_conditions if (valid_group_cols and is_agg_target and active_target == target_num_col) else conditions
-        p_list = having_params if (valid_group_cols and is_agg_target and active_target == target_num_col) else params
-
-        if op == "BETWEEN":
-            logic = "NOT BETWEEN" if negated else "BETWEEN"
-            link = "AND" if c_list else ""
-            c_list.append(f"{link} {left} {logic} ? AND ?".strip())
-            if logic == "OR":
-                pass
-            p_list.extend(val)
+    # 3. Filters (Dimensions) -> Handling cross-column OR Tree
+    keyword_groups = [[]]
+    for kw in keywords:
+        if kw.get('logic') == "OR":
+            keyword_groups.append([kw])
         else:
-            if negated:
-                invert_map = {'>': '<=', '<': '>=', '=': '!=', '>=': '<', '<=': '>'}
-                op = invert_map.get(op, '!=')
+            keyword_groups[-1].append(kw)
+            
+    for grp in keyword_groups:
+        col_clusters = {}
+        for kw in grp:
+            word = kw['word'].lower()
+            negated = kw['negated']
+            
+            if word in SCHEMA_MAPPING:
+                column = SCHEMA_MAPPING[word]
                 
-            link = "AND" if c_list else ""
-            c_list.append(f"{link} {left} {op} ?".strip())
-            p_list.append(val)
+                # Bare Dimension Injection
+                if column not in NUMERIC_COLUMNS and column != "*":
+                    if word == column or word == column + "s" or word == "cities":
+                        if column not in ir["group_by"]:
+                            ir["group_by"].append(column)
+                        continue
+                        
+                    if column not in col_clusters:
+                        col_clusters[column] = {"include": [], "exclude": []}
+                        
+                    if negated and word not in col_clusters[column]["exclude"]:
+                        col_clusters[column]["exclude"].append(word)
+                    elif not negated and word not in col_clusters[column]["include"]:
+                        col_clusters[column]["include"].append(word)
+                        
+        grp_filters = []
+        for col, rules in col_clusters.items():
+            if rules["include"]:
+                op = "=" if len(rules["include"]) == 1 else "IN"
+                val = rules["include"][0] if len(rules["include"]) == 1 else rules["include"]
+                grp_filters.append({"field": col, "op": op, "value": val})
+            if rules["exclude"]:
+                op = "!=" if len(rules["exclude"]) == 1 else "NOT IN"
+                val = rules["exclude"][0] if len(rules["exclude"]) == 1 else rules["exclude"]
+                grp_filters.append({"field": col, "op": op, "value": val})
+                
+        if grp_filters:
+            ir["filters"]["groups"].append(grp_filters)
 
-    # 5. Pipeline Assembly
-    base_query = f"SELECT {select_clause} FROM employees"
-
-    if conditions:
-        base_query += " WHERE " + " ".join(conditions) # already contains AND/OR links
+    # 4. Filters (Measurements / Having)
+    for num_cond in numerics:
+        explicit_col = num_cond.get('target_col')
+        target = explicit_col if explicit_col else agg_target_col
+        if not target:
+            continue
+            
+        op = num_cond.get('operator')
+        neg = num_cond.get('negated', False)
+        val = num_cond.get('value')
         
-    if valid_group_cols:
-        base_query += " GROUP BY " + ", ".join(valid_group_cols)
-        
-    if having_conditions:
-        base_query += " HAVING " + " AND ".join(having_conditions)
-        params.extend(having_params)
-        
-    # 6. Sorting
-    valid_order_cols = []
-    for ord_item in order_by:
-        col_name = SCHEMA_MAPPING.get(ord_item['column'])
-        if col_name:
-            direction = ord_item['direction']
-            query_col = col_name
-            for agg in aggregations:
-                if agg['target'] in SCHEMA_MAPPING and SCHEMA_MAPPING[agg['target']] == col_name:
-                    f = agg['func'] if agg['func'] != "TOTAL_OR_COUNT" else ("SUM" if col_name in NUMERIC_COLUMNS else "COUNT")
-                    query_col = f"{f}({col_name})"
+        if op == "BETWEEN":
+            real_op = "NOT BETWEEN" if neg else "BETWEEN"
+        else:
+            invert_map = {'>': '<=', '<': '>=', '=': '!=', '>=': '<', '<=': '>'}
+            real_op = invert_map.get(op, '!=') if neg else op
+            
+        # Ascertain if this is WHERE or HAVING
+        is_having = False
+        mapped_func = None
+        if ir["group_by"]:
+            for a in ir["aggregations"]:
+                if a["field"] == target:
+                    is_having = True
+                    mapped_func = a["func"]
                     break
                     
-            item = f"{query_col} {direction}"
-            if item not in valid_order_cols:
-                valid_order_cols.append(item)
-                
-    if order_by and not valid_order_cols and target_num_col:
-        valid_order_cols.append(f"{target_num_col} {order_by[0]['direction']}")
-        
-    if not valid_order_cols and target_num_col:
+        if is_having:
+            ir["having"].append({"func": mapped_func, "field": target, "op": real_op, "value": val})
+        else:
+            ir["numeric_filters"].append({"field": target, "op": real_op, "value": val})
+
+    # 5. Sorting
+    if order_items:
+        for ord_item in order_items:
+            col_key = ord_item.get('word', ord_item.get('column'))
+            c = SCHEMA_MAPPING.get(col_key)
+            if c:
+                direction = ord_item.get('direction') or "DESC"
+                matched_agg = None
+                for a in ir["aggregations"]:
+                    if a["field"] == c:
+                        matched_agg = a
+                        break
+                        
+                if matched_agg:
+                    ir["order_by"].append({"func": matched_agg["func"], "field": c, "direction": direction})
+                elif c not in NUMERIC_COLUMNS:
+                    ir["order_by"].append({"field": c, "direction": direction})
+                else:
+                    ir["order_by"].append({"field": c, "direction": direction})
+    
+    # Implicit Sorting (Rank Intent caching)
+    if not ir["order_by"]:
         for kw in keywords:
-            if kw.get('direction') is not None:
-                valid_order_cols.append(f"{target_num_col} {kw['direction']}")
+            if kw.get('direction'):
+                if ir["aggregations"]:
+                    agg = ir["aggregations"][-1]
+                    ir["order_by"].append({"func": agg["func"], "field": agg["field"], "direction": kw['direction']})
+                else:
+                    ir["order_by"].append({"field": "salary", "direction": kw['direction']})
                 break
 
-    if valid_order_cols:
-        base_query += " ORDER BY " + ", ".join(valid_order_cols)
+    # OLAP Semantic Hierarchy Override
+    if ir["group_by"] and ir["aggregations"] and ir["order_by"]:
+        new_order = []
+        for g in ir["group_by"][:-1]: 
+            new_order.append({"field": g, "direction": "ASC"})
+            
+        measure_hooked = False
+        for o in ir["order_by"]:
+            if "func" in o:
+                new_order.append(o)
+                measure_hooked = True
+                
+        if not measure_hooked:
+            agg = ir["aggregations"][0]
+            new_order.append({"func": agg["func"], "field": agg["field"], "direction": "DESC"})
+            
+        dedup_order = []
+        for o in new_order:
+            if o not in dedup_order:
+                dedup_order.append(o)
+        ir["order_by"] = dedup_order
 
-    if limit:
-        base_query += f" LIMIT {limit}"
+    return ir
 
-    # 7. Fail Fast Defense Check
-    if base_query == "SELECT * FROM employees" and not limit and not numerics and not conditions:
+def generate_sql(parsed_data: Dict[str, Any]) -> Tuple[str, List[Any]]:
+    logger.info("Generating SQL from standard IR Query Plan.")
+    
+    if not parsed_data:
+        raise ValueError("Cannot parse an empty sentence context.")
+        
+    ir = build_query_plan(parsed_data)
+    params = []
+    
+    # 1. SELECT clause
+    select_items = []
+    if ir["group_by"]:
+        for g in ir["group_by"]:
+            select_items.append(g)
+            
+    if ir["aggregations"]:
+        for a in ir["aggregations"]:
+            item = f"{a['func']}(*)" if a['field'] == "*" else f"{a['func']}({a['field']})"
+            if item not in select_items:
+                select_items.append(item)
+                
+    select_clause = ", ".join(select_items) if select_items else "*"
+    base_query = f"SELECT {select_clause} FROM employees"
+    
+    # 2. WHERE clause
+    where_pieces = []
+    
+    if ir["filters"]["groups"]:
+        or_groups_str = []
+        for grp in ir["filters"]["groups"]:
+            and_pieces = []
+            for f in grp:
+                field = f["field"]
+                op = f["op"]
+                val = f["value"]
+                
+                left = f"lower({field})" if field not in NUMERIC_COLUMNS and field != "*" else field
+                if op in ("IN", "NOT IN"):
+                    placeholders = ", ".join(["?"] * len(val))
+                    and_pieces.append(f"{left} {op} ({placeholders})")
+                    params.extend(val)
+                else:
+                    and_pieces.append(f"{left} {op} ?")
+                    params.append(val)
+                    
+            if and_pieces:
+                if len(and_pieces) > 1:
+                    or_groups_str.append("(" + " AND ".join(and_pieces) + ")")
+                else:
+                    or_groups_str.append(and_pieces[0])
+                    
+        if or_groups_str:
+            where_pieces.append("(" + " OR ".join(or_groups_str) + ")" if len(or_groups_str) > 1 else or_groups_str[0])
+            
+    if ir.get("numeric_filters"):
+        for f in ir["numeric_filters"]:
+            left = f["field"]
+            if f["op"] in ("BETWEEN", "NOT BETWEEN"):
+                where_pieces.append(f"{left} {f['op']} ? AND ?")
+                params.extend(f["value"])
+            else:
+                where_pieces.append(f"{left} {f['op']} ?")
+                params.append(f["value"])
+                
+    if where_pieces:
+        base_query += " WHERE " + " AND ".join(where_pieces)
+
+    # 3. GROUP BY
+    if ir["group_by"]:
+        base_query += " GROUP BY " + ", ".join(ir["group_by"])
+
+    # 4. HAVING
+    if ir["having"]:
+        having_pieces = []
+        for f in ir["having"]:
+            left = f"{f['func']}(*)" if f['field'] == "*" else f"{f['func']}({f['field']})"
+            op = f["op"]
+            val = f["value"]
+            
+            if op in ("BETWEEN", "NOT BETWEEN"):
+                having_pieces.append(f"{left} {op} ? AND ?")
+                params.extend(val)
+            else:
+                having_pieces.append(f"{left} {op} ?")
+                params.append(val)
+                
+        base_query += " HAVING " + " AND ".join(having_pieces)
+
+    # 5. ORDER BY
+    if ir["order_by"]:
+        order_pieces = []
+        for o in ir["order_by"]:
+            if "func" in o:
+                left = f"{o['func']}(*)" if o['field'] == "*" else f"{o['func']}({o['field']})"
+            else:
+                left = o['field']
+                
+            direction = o.get("direction", "DESC")
+            
+            if not ir["group_by"] and ir["aggregations"]:
+                continue
+                
+            order_pieces.append(f"{left} {direction}")
+            
+        if order_pieces:
+            base_query += " ORDER BY " + ", ".join(order_pieces)
+
+    # 6. LIMIT
+    if ir["limit"]:
+        base_query += f" LIMIT {ir['limit']}"
+
+    # 7. Fail Fast Defense
+    if base_query == "SELECT * FROM employees" and not ir["limit"] and not ir["filters"]["groups"] and not ir["aggregations"] and not ir["numeric_filters"]:
         raise ValueError("This text could not map to the database schema accurately. No recognizable relationships found.")
-
+        
     base_query += ";"
     
     return base_query, params
