@@ -14,7 +14,7 @@ def generate_sql(parsed_data):
         "manager": "role",
         "senior": "level",
         "junior": "level",
-        "salary": "salary" # Added salary as a known keyword
+        "salary": "salary" 
     }
 
     conditions = []
