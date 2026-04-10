@@ -61,10 +61,16 @@ def parse_query(user_input: str) -> Dict[str, Any]:
     is_between = False
     between_vals = []
     logic_operator = "AND"
+    between_target_cache = None
     
     word_to_num = {'one':1, 'two':2, 'three':3, 'four':4, 'five':5, 'six':6, 'seven':7, 'eight':8, 'nine':9, 'ten':10}
     
     for i, (word, tag) in enumerate(tagged_tokens):
+        # 0. Structural Punctuation Resets
+        if word in (',', '.'):
+            parse_state = "FILTER"
+            continue
+            
         clean_word = re.sub(r'[^\w\s]', '', word)
         
         if not clean_word and word not in ('>', '<', '=', '>=', '<='):
@@ -78,6 +84,7 @@ def parse_query(user_input: str) -> Dict[str, Any]:
         # 2. Negations
         if clean_word in ('not', 'excluding', 'except', 'without'):
             is_negated = True
+            parse_state = "FILTER"
             continue
 
         # 3. Ranges
@@ -117,9 +124,8 @@ def parse_query(user_input: str) -> Dict[str, Any]:
                     parse_state = "GROUP"
                     break
             continue
-        elif clean_word in ("order", "sort", "rank"):
-            if i + 1 < len(tagged_tokens) and tagged_tokens[i+1][0] == "by":
-                parse_state = "ORDER"
+        elif clean_word in ("order", "sort", "rank", "sorted", "ordered", "ranked"):
+            parse_state = "ORDER"
             continue
         elif clean_word in ("where", "filter", "having", "only"):
             parse_state = "FILTER"
@@ -145,6 +151,9 @@ def parse_query(user_input: str) -> Dict[str, Any]:
             if limit is not None and numeric_val == limit:
                 pass # Already parsed as limit 
             else:
+                if target_col:
+                    between_target_cache = target_col
+                    
                 if is_between:
                     between_vals.append(numeric_val)
                     if len(between_vals) == 2:
@@ -152,11 +161,12 @@ def parse_query(user_input: str) -> Dict[str, Any]:
                             "operator": "BETWEEN",
                             "value": between_vals,
                             "negated": is_negated,
-                            "target_col": target_col
+                            "target_col": target_col or between_target_cache
                         })
                         between_vals = []
                         is_between = False
                         is_negated = False
+                        between_target_cache = None
                 else:
                     numeric_conditions.append({
                         "operator": current_operator,
@@ -173,6 +183,11 @@ def parse_query(user_input: str) -> Dict[str, Any]:
             
         # 8. Semantic Aggregation Assignments
         if clean_word in aggregation_map:
+            if clean_word in ('highest', 'lowest', 'maximum', 'minimum', 'top', 'bottom') and i + 1 < len(tagged_tokens):
+                next_raw = re.sub(r'[^\w\s]', '', tagged_tokens[i+1][0]).lower()
+                if next_raw in aggregation_map:
+                    continue # Bypass stacking MAX/MIN recursively
+                    
             agg_func = aggregation_map[clean_word]
             
             target = "*"
@@ -196,13 +211,23 @@ def parse_query(user_input: str) -> Dict[str, Any]:
         # 9. POS Verification & Keyword Injection
         if tag in ('NN', 'NNS', 'NNP', 'JJ', 'VBG') or clean_word in ('developers', 'managers', 'senior', 'junior'): 
             if clean_word not in STOP_WORDS:
-                payload = {"word": clean_word, "negated": is_negated, "direction": order_direction, "logic": logic_operator}
+                # 11. Save state
+                payload = {
+                    "word": clean_word,
+                    "negated": is_negated,
+                    "direction": order_direction,
+                    "logic": logic_operator
+                }
+                
                 if parse_state == "GROUP":
                     group_by.append(clean_word)
                 elif parse_state == "ORDER":
-                    order_by.append({"column": clean_word, "direction": order_direction})
-                else:
-                    keywords.append(payload)
+                    order_by.append(payload)
+                    
+                keywords.append(payload)
+                
+                # We handle resetting negations when sentences reset, 
+                # logic operator remains sticky until changed
                 is_negated = False
                 order_direction = None
                 logic_operator = "AND"
