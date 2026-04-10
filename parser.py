@@ -21,7 +21,7 @@ def parse_query(user_input: str) -> Dict[str, Any]:
     if not user_input or not isinstance(user_input, str):
         return {}
 
-    text = user_input.lower()
+    text = user_input.lower()   
     
     try:
         tokens = nltk.word_tokenize(text)
