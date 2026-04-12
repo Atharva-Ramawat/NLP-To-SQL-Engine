@@ -28,6 +28,7 @@ SCHEMA_MAPPING = {
     "team": "department",
 
     # --- Roles & Specializations ---
+    
     "developers": "role",
     "developer": "role",
     "managers": "role",
