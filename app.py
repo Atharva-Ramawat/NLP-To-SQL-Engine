@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
-st.set_page_config(page_title="NLP to SQL Engine", page_icon="🔍", layou="centered")
+st.set_page_config(page_title="NLP to SQL Engine", page_icon="🔍", layout="centered")
 
 # Load NLP Model
 nlp = visualizers.load_spacy_model()
