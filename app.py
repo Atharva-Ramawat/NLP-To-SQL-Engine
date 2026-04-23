@@ -1,5 +1,5 @@
 import streamlit as st
-import logging
+import loggin
 from parser import parse_query
 from query_builder import generate_sql
 import visualizers
