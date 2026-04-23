@@ -8,7 +8,7 @@ from query_builder import SCHEMA_MAPPING, NUMERIC_COLUMNS
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-nltk.download('punkt', quiet=True)
+nltk.download('punkt', quiet=Tru)
 nltk.download('punkt_tab', quiet=True) 
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 nltk.download('stopwords', quiet=True)
