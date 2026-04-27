@@ -1,7 +1,7 @@
 ﻿Starting Stress Test Suite...
 
 -------------------------------------------------
-QUERY: 'average salary of developers in pune grouped by city
+QUERY: 'average salary of developers in pune grouped by city'
 SQL: SELECT city, AVG(salary) FROM employees WHERE lower(role) = ? AND lower(city) = ? GROUP BY city;
 PARAMS: ['developers', 'pune']
 
