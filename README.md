@@ -5,7 +5,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-Web_Framework-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-purple.svg)
 
-## 📌 Overvie
+## 📌 Overview
 **Text2Query Core** is a deterministic, rule-based natural language processing engine that translates human language into structured SQL queries. 
 
 Unlike modern generative AI wrappers, this project is built entirely from the ground up using **traditional NLP architectures**. It operates 100% locally with zero external API dependencies, ensuring total data privacy, instantaneous execution, and highly predictable state-machine routing. 
