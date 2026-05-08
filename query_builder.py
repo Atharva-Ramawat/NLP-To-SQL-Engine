@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 # Expanded Schema Mapping for Medium-Level Queries
 SCHEMA_MAPPING = {
-    # --- Geographic (City) ---
+   
     "nagpur": "city",
     "mumbai": "city",
     "pune": "city",
