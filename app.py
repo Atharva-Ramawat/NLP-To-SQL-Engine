@@ -39,7 +39,6 @@ if st.button("Generate SQL", type="primary"):
                 st.subheader("Base Secure SQL Query String")
                 st.code(sql_query, language="sql")
                 
-                # Display parameterized isolated variables
                 st.subheader("Isolated Statement Parameters")
                 st.info(f"Arguments: {sql_params}")
                 
