@@ -33,7 +33,6 @@ if st.button("Generate SQL", type="primary"):
                 
                 sql_query, sql_params = generate_sql(parsed_data)
                 
-                # Render Safe Output Formats
                 st.success("Query Securley Translated!")
                 
                 # Display base query
