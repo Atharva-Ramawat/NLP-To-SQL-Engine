@@ -42,7 +42,6 @@ if st.button("Generate SQL", type="primary"):
                 st.subheader("Isolated Statement Parameters")
                 st.info(f"Arguments: {sql_params}")
                 
-                # Expandable diagnostics for visibility
                 with st.expander("See how the NLP Engine parsed this", expanded=True):
                     
                     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
