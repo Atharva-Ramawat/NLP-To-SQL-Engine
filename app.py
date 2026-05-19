@@ -35,7 +35,7 @@ if st.button("Generate SQL", type="primary"):
                 
                 st.success("Query Securley Translated!")
                 
-                # Display base query
+                
                 st.subheader("Base Secure SQL Query String")
                 st.code(sql_query, language="sql")
                 
