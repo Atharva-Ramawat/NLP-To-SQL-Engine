@@ -28,7 +28,6 @@ if st.button("Generate SQL", type="primary"):
     if user_input.strip():
         with st.spinner("Analyzing text and securing query..."):
             try:
-                # 1. Execute Text Parsing
                 logger.info(f"Processing Request: {user_input}")
                 parsed_data = parse_query(user_input)
                 
