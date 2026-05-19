@@ -11,7 +11,6 @@ st.set_page_config(page_title="NLP to SQL Engine", page_icon="🔍", layout="cen
 
 nlp = visualizers.load_spacy_model()
 
-# Header Section
 st.title("NLP-to-SQL Engine")
 st.markdown("""
 This engine securely translates natural language into strictly **parameterized SQL queries** using traditional NLP.
