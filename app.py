@@ -31,7 +31,6 @@ if st.button("Generate SQL", type="primary"):
                 logger.info(f"Processing Request: {user_input}")
                 parsed_data = parse_query(user_input)
                 
-                # 2. Build Safe Parameterized SQL
                 sql_query, sql_params = generate_sql(parsed_data)
                 
                 # Render Safe Output Formats
