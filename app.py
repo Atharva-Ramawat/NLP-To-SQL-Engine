@@ -4,7 +4,6 @@ from parser import parse_query
 from query_builder import generate_sql
 import visualizers
 
-# Standardize logging configuration for the production web app
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
