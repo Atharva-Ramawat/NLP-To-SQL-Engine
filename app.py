@@ -5,7 +5,7 @@ from query_builder import generate_sql
 import visualizers
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name_
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="NLP to SQL Engine", page_icon="🔍", layout="centered")
 
