@@ -6,7 +6,7 @@ from nltk.corpus import stopwords
 from query_builder import SCHEMA_MAPPING, NUMERIC_COLUMNS
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name_
+logger = logging.getLogger(__name__
 
 nltk.download('punkt', quiet=True)
 nltk.download('punkt_tab', quiet=True) 
