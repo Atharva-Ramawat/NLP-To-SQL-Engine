@@ -1,4 +1,4 @@
-﻿# 🔍  NLP-to-SQL Engine
+﻿# 🔍  NLP-to-SQL 
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue.svg)
 ![NLTK](https://img.shields.io/badge/NLTK-Natural_Language_Toolkit-green.svg)
