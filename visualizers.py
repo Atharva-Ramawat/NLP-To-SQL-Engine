@@ -9,7 +9,7 @@ import plotly.express as px
 import pandas as pd
 import seaborn as sns
 import nltk
-from collections import 
+from collections import Counter
 
 @st.cache_resource
 def load_spacy_model():
