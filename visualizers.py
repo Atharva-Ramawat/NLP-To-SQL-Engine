@@ -24,7 +24,7 @@ def render_wordcloud(text):
         st.warning("No text to generate word cloud.")
         return
     
-    # Generate word cloud
+   
     wordcloud = WordCloud(width=800, height=400, background_color='white', colormap='viridis').generate(text)
     
     fig, ax = plt.subplots(figsize=(10, 5))
