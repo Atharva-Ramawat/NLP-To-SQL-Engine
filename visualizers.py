@@ -116,7 +116,7 @@ def render_attention_heatmap(parsed_data, text):
     """ Simulate an attention heatmap based on keyword/schema matching. """
     tokens = nltk.word_tokenize(text)
     
-    # give weight to words found in parsed constraints
+
     weights = []
     
     # Extract known targets
