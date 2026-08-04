@@ -25,7 +25,7 @@ user_input = st.text_input(
 )
 
 if st.button("Generate SQL", type="primary"):
-    if user_input.strip():
+    if user_input.strip:
         with st.spinner("Analyzing text and securing query..."):
             try:
                 logger.info(f"Processing Request: {user_input}")
