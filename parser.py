@@ -16,7 +16,7 @@ nltk.download('stopwords', quiet=True)
 STOP_WORDS = set(stopwords.words('english'))
 
 def parse_query(user_input: str) -> Dict[str, Any]:
-    logger.info("Starting robust parsed stress testing")
+    logger.info("Starting robust parsed stress testing"
     
     if not user_input or not isinstance(user_input, str):
         return {}
